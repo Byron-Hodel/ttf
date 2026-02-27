@@ -58,7 +58,7 @@ int main(void) {
 	end_scratch(scratch);
 
 	u8 lookup_char = 'E';
-	u16 glyph_index = lookup_glyph_index(font, lookup_char);
+	u16 glyph_index = font_lookup_glyph_index(font, lookup_char);
 	printf("glyph index for '%c' is: %d\n", lookup_char, glyph_index);
 	//unpack_glyph_outline(font, glyph_index);
 
