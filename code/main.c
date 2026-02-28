@@ -48,13 +48,14 @@ int main(void) {
 		fseek(font_file, 0, SEEK_END);
 		font_data_size = (usize)ftell(font_file);
 		fseek(font_file, 0, SEEK_SET);
+		ASSERT(font_data_size <= 0xFFFFFFFF);
 
 		font_data = push_array(scratch.arena, u8, font_data_size);
 		fread(font_data, 1, font_data_size, font_file);
 		fclose(font_file);
 	}
 	
-	Font font = font_make(&arena, font_data, font_data_size);
+	Font font = font_make(&arena, font_data, (u32)font_data_size);
 	end_scratch(scratch);
 
 	u8 lookup_char = 'E';
