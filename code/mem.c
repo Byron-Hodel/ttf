@@ -27,7 +27,7 @@ function u8 *_arena_push(Arena *arena, usize size, usize alignment, b32 zero) {
 	ASSERT(IS_POW2(alignment));
 
 	u8 *mem = (u8*)ALIGN_FORWARD_POW2((uintptr)arena->base + arena->pos, alignment);
-	usize next_pos = (uintptr)mem  - (uintptr)arena->base + arena->pos + size;
+	usize next_pos = (uintptr)mem - (uintptr)arena->base + size;
 
 	if (next_pos > arena->size) {
 		debug_trap();
@@ -51,6 +51,9 @@ function u8 *_arena_push(Arena *arena, usize size, usize alignment, b32 zero) {
 
 #define push_array(arena, T, n) _arena_push(arena, sizeof(T)*(n), alignof(T), TRUE)
 #define push_array_nz(arena, T, n) _arena_push(arena, sizeof(T)*(n), alignof(T), FALSE)
+
+#define push_array_no_alignment(arena, T, n) _arena_push(arena, sizeof(T)*(n), 1, TRUE)
+#define push_array_no_alignment_nz(arena, T, n) _arena_push(arena, sizeof(T)*(n), 1, FALSE)
 
 #define push_array_aligned(arena, T, n, alignment) _arena_push(arena, sizeof(T)*(n), alignment, TRUE)
 #define push_array_aligned_nz(arena, T, n, alignment) _arena_push(arena, sizeof(T)*(n), alignment, FALSE)
