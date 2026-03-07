@@ -64,6 +64,8 @@ function void arena_pop_to(Arena *arena, usize pos) {
 	arena->pos = pos;
 }
 
+#define arena_reset(arena) arena_pop_to(arena, 0)
+
 function Arena_Temp arena_begin_temp(Arena *arena) {
 	Arena_Temp temp = {0};
 	temp.arena = arena;
