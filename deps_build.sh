@@ -18,7 +18,8 @@ mkdir install
 cd raylib-5.5
 
 cmake -S . -B build \
-	-DCMAKE_BUILD_TYPE=Release \
+	-DGLFW_BUILD_WAYLAND=ON \
+	-DCMAKE_BUILD_TYPE=Debug \
 	-DCMAKE_INSTALL_PREFIX="$(pwd)/../install"
 
 cmake --build build
