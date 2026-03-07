@@ -8,39 +8,63 @@
 #include "mem.c"
 #include "ttf.c"
 
+U8_Slice read_entire_file(Arena *arena, const char *path) {
+	U8_Slice file_data = {0};
+	FILE *file = fopen(path, "rb");
+
+	if (file != 0) {
+		fseek(file, 0, SEEK_END);
+		file_data.len = (usize)ftell(file);
+		fseek(file, 0, SEEK_SET);
+
+		file_data.base = push_array(arena, u8, file_data.len);
+		fread(file_data.base, 1, file_data.len, file);
+		fclose(file);
+	}
+	
+	return file_data;
+}
+
+const char *DEFAULT_FONT_PATH = "./Cormorant_Garamond/CormorantGaramond-VariableFont_wght.ttf";
+
 int main(void) {
 	// allocate memory arenas
-	Arena arena;
-	arena_init(&arena, malloc(2*MiB), 2*MiB);
+	Arena font_arena;
+	arena_init(&font_arena, malloc(2*MiB), 2*MiB);
 	arena_init(&scratch_arenas[0], malloc(2*MiB), 2*MiB);
 	arena_init(&scratch_arenas[1], malloc(2*MiB), 2*MiB);
 
-	const char *TEST_FILE_PATH = "./Cormorant_Garamond/CormorantGaramond-VariableFont_wght.ttf";
-
-	U8_Slice font_data = {0};
-	{
-		FILE *font_file = fopen(TEST_FILE_PATH, "rb");
-		ASSERT(font_file != 0);
-
-		fseek(font_file, 0, SEEK_END);
-		font_data.len = (usize)ftell(font_file);
-		fseek(font_file, 0, SEEK_SET);
-
-		font_data.base = push_array(&arena, u8, font_data.len);
-		fread(font_data.base, 1, font_data.len, font_file);
-		fclose(font_file);
-	}
+	U8_Slice font_data = read_entire_file(&font_arena, DEFAULT_FONT_PATH);
 	
 	TTF_Font font = font_make(font_data);
 
+	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 	InitWindow(800, 450, "font stuff");	
 
 	Arena_Temp scratch = begin_scratch(0, 0);
 
 	Glyph_Outline glyph_outline = {0};
+	{
+		u16 glyph_index = font_glyph_index_from_codepoint(font, 'g');
+		glyph_outline = font_unpack_glyph_outline(scratch.arena, font, glyph_index);
+	}
+
 	while (!WindowShouldClose()) {
 		i32 screen_width = GetScreenWidth();
 		i32 screen_height = GetScreenHeight();
+
+		// load new font file
+		if (IsFileDropped()) {
+			FilePathList files = LoadDroppedFiles();
+
+			if (files.count > 0) {
+				arena_reset(&font_arena);
+				font_data = read_entire_file(&font_arena, files.paths[0]);
+				font = font_make(font_data);
+			}
+
+			UnloadDroppedFiles(files);
+		}
 
 		BeginDrawing();
 		ClearBackground(RAYWHITE);
