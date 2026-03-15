@@ -550,6 +550,10 @@ function Glyph_Outline font_unpack_glyph_outline(Arena *arena, TTF_Font font, u1
 	i16 num_contours = 0;
 	if (glyph_data.len >= 10) {
 		num_contours = read_i16be_unchecked(glyph_data, 0);
+		outline.x_min = (i32)read_i16be_unchecked(glyph_data, 2) << 6;
+		outline.y_min = (i32)read_i16be_unchecked(glyph_data, 4) << 6;
+		outline.x_max = (i32)read_i16be_unchecked(glyph_data, 6) << 6;
+		outline.y_max = (i32)read_i16be_unchecked(glyph_data, 8) << 6;
 	}
 
 	if (num_contours < 0) { // compound glyph
