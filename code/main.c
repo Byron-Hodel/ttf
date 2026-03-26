@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 
 #define GLAD_GL_IMPLEMENTATION
 #include <gl.h>
@@ -35,9 +36,9 @@ function U8_Slice read_entire_file(Arena *arena, const char *path) {
 	return file_data;
 }
 
-function b32 point_is_in_rect(f32 x, f32 y, Rect rect) {
-	return x >= rect.x && x <= rect.x + rect.w &&
-	       y >= rect.y && y <= rect.y + rect.h;
+function b32 point_is_in_rect(Vec2 point, Rect rect) {
+	return point.x >= rect.x && point.x <= rect.x + rect.w &&
+	       point.y >= rect.y && point.y <= rect.y + rect.h;
 }
 
 global Vec2 scroll_delta;
@@ -57,7 +58,7 @@ int main(void) {
 
 	U8_Slice font_data = read_entire_file(&font_arena, DEFAULT_FONT_PATH);
 	
-	TTF_Font font = font_make(font_data);
+	Font font = font_make(font_data);
 
 	glfwInit();
 	glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
@@ -98,7 +99,6 @@ int main(void) {
 
 		begin_drawing(screen_width, screen_height, framebuffer_width, framebuffer_height);
 
-		View next_view = ui.current_view;
 		switch (ui.current_view) {
 		//case View_Details: {
 		//} break;
@@ -164,7 +164,7 @@ int main(void) {
 			}
 			
 			u32 first_visible_row = (u32)(ui.list_scroll / GRID_CELL_SIZE);
-			u32 last_visible_row = (u32)((f32)first_visible_row + scroll_container.h / GRID_CELL_SIZE);
+			u32 last_visible_row = (u32)((f32)first_visible_row + scroll_container.h / GRID_CELL_SIZE) + 1;
 			u32 start_glyph = first_visible_row * num_columns;
 			u32 end_glyph = (last_visible_row + 1) * num_columns - 1;
 			if (end_glyph > font.num_glyphs) {
@@ -181,21 +181,30 @@ int main(void) {
 				cell.w = GRID_CELL_SIZE - 2 * GRID_CELL_PADDING;
 				cell.h = GRID_CELL_SIZE - 2 * GRID_CELL_PADDING;
 
-				draw_rect(cell, LIGHT_GRAY);
+				Color cell_color = LIGHT_GRAY;
+				if (point_is_in_rect(mouse_pos, cell)) {
+					cell_color = GRAY;
+
+					if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+						ui.glyph_index = i;
+						ui.next_view = View_Inspect;
+					}
+				}
+				draw_rect(cell, cell_color);
 
 				// draw glyph points
 				Arena_Temp scratch = arena_begin_temp(&font_arena);
 				// this is slow
-				Glyph_Outline outline = font_unpack_glyph_outline(scratch.arena, font, (u16)i);
+				Outline outline = font_unpack_glyph(scratch.arena, font, (u16)i, 1 << 16, FALSE);
 				
-				for (usize vert_index = 0; vert_index < outline.num_verts; vert_index += 1) {
-					i32 outline_width = (outline.x_max - outline.x_min) / 64;
-					i32 outline_height = (outline.y_max - outline.y_min) / 64;
+				for (usize vert_index = 0; vert_index < outline.num_points; vert_index += 1) {
+					i32 outline_width = (outline.max[0] - outline.min[0]) / 64;
+					i32 outline_height = (outline.max[1] - outline.min[1]) / 64;
 					f32 scale = outline_width > outline_height ? (f32)outline_width : (f32)outline_height;
 					scale = (3.0f * cell.w / 4.0f) / scale;
 
-					f32 vert_x = (f32)(outline.verts[vert_index].x - outline.x_min) / 64.0f;
-					f32 vert_y = (f32)(outline.verts[vert_index].y - outline.y_min) / 64.0f;
+					f32 vert_x = (f32)(outline.points[vert_index].pos[0] - outline.min[0]) / 64.0f;
+					f32 vert_y = (f32)(outline.points[vert_index].pos[1] - outline.min[1]) / 64.0f;
 					// convert glyph coordinates to ui coordinates
 					vert_x *= scale;
 					vert_y *= -scale;
@@ -217,9 +226,53 @@ int main(void) {
 			}
 		} break;
 		case View_Inspect: {
+			if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+				ui.next_view = View_List;
+			}
+
+			// draw glyph points
+			Arena_Temp scratch = arena_begin_temp(&font_arena);
+			// this is slow
+			Outline outline = font_unpack_glyph(scratch.arena, font, ui.glyph_index, 1 << 16, FALSE);
+
+			Vec2 prev_point;
+			for (usize vert_index = 0; vert_index < outline.num_points; vert_index += 1) {
+				i32 outline_width = (outline.max[0] - outline.min[0]) / 64;
+				i32 outline_height = (outline.max[1] - outline.min[1]) / 64;
+				f32 scale = outline_width > outline_height ? (f32)outline_width : (f32)outline_height;
+				scale = (3.0f * (f32)screen_height / 4.0f) / scale;
+
+				f32 vert_x = (f32)(outline.points[vert_index].pos[0] - outline.min[0]) / 64.0f;
+				f32 vert_y = (f32)(outline.points[vert_index].pos[1] - outline.min[1]) / 64.0f;
+				// convert glyph coordinates to ui coordinates
+				vert_x *= scale;
+				vert_y *= -scale;
+				vert_y += (f32)outline_height * scale;
+
+				vert_x += (f32)screen_width / 2.0f - (f32)outline_width * scale / 2.0f;
+				vert_y += (f32)screen_height / 2.0f - (f32)outline_height * scale / 2.0f;
+
+				Rect vert_rect;
+				vert_rect.x = vert_x;
+				vert_rect.y = vert_y;
+				vert_rect.w = 4;
+				vert_rect.h = 4;
+
+				Color color = (outline.points[vert_index].on_curve) ? BLACK : DARK_RED;
+				draw_rect(vert_rect, color);
+				Vec2 point;
+				point.x = vert_x;
+				point.y = vert_y;
+				if (vert_index > 0) {
+					draw_line(prev_point, point, 2, YELLOW);
+				}
+				prev_point = point;
+			}
+
+			arena_end_temp(scratch);
 		} break;
 		}
-		ui.current_view = next_view;
+		ui.current_view = ui.next_view;
 
 		end_drawing();
 

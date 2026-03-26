@@ -1,7 +1,7 @@
 typedef u32 Color;
 
 typedef struct {
-	f32   x, y, z;
+	Vec2  pos;
 	Color color;
 } Graphics_Vertex;
 
@@ -98,8 +98,8 @@ function void gl_init(void) {
 	glEnableVertexAttribArray(0);
 	glEnableVertexAttribArray(1);
 
-	glVertexAttribPointer(0, 3, GL_FLOAT, FALSE, sizeof(Graphics_Vertex), 0);
-	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, TRUE, sizeof(Graphics_Vertex), (void*)12);
+	glVertexAttribPointer(0, 2, GL_FLOAT, FALSE, sizeof(Graphics_Vertex), 0);
+	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, TRUE, sizeof(Graphics_Vertex), (void*)8);
 
 	glBindVertexArray(0);
 
@@ -241,17 +241,16 @@ function void set_scissor_rect(i32 x, i32 y, i32 w, i32 h) {
 function void draw_rect(Rect rect, Color color) {
 	ASSERT(gl_ctx.num_verts + 4 < MAX_VERTICES);
 	ASSERT(gl_ctx.num_tris + 6 < MAX_TRIANGLES);
-	gl_ctx.mapped_verts[gl_ctx.num_verts + 0].x = rect.x;
-	gl_ctx.mapped_verts[gl_ctx.num_verts + 0].y = rect.y;
-	gl_ctx.mapped_verts[gl_ctx.num_verts + 1].x = rect.x;
-	gl_ctx.mapped_verts[gl_ctx.num_verts + 1].y = rect.y + rect.h;
-	gl_ctx.mapped_verts[gl_ctx.num_verts + 2].x = rect.x + rect.w;
-	gl_ctx.mapped_verts[gl_ctx.num_verts + 2].y = rect.y;
-	gl_ctx.mapped_verts[gl_ctx.num_verts + 3].x = rect.x + rect.w;
-	gl_ctx.mapped_verts[gl_ctx.num_verts + 3].y = rect.y + rect.h;	
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 0].pos.x = rect.x;
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 0].pos.y = rect.y;
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 1].pos.x = rect.x;
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 1].pos.y = rect.y + rect.h;
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 2].pos.x = rect.x + rect.w;
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 2].pos.y = rect.y;
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 3].pos.x = rect.x + rect.w;
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 3].pos.y = rect.y + rect.h;	
 
 	for (usize i = 0; i < 4; i += 1) {
-		gl_ctx.mapped_verts[gl_ctx.num_verts + i].z = 0;
 		gl_ctx.mapped_verts[gl_ctx.num_verts + i].color = color;
 	}
 
@@ -267,5 +266,36 @@ function void draw_rect(Rect rect, Color color) {
 	gl_ctx.num_tris += 6;
 }
 
-function void draw_quad_bezier(void) {
+function void draw_line(Vec2 p0, Vec2 p1, f32 thickness, Color color) {
+	Vec2 delta = vec2_sub(p1, p0);
+	Vec2 offset;
+	offset.x = -delta.y;
+	offset.y = delta.x;
+	offset = vec2_normalize(offset);
+	offset = vec2_smul(offset, thickness / 2.0f);
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 0].pos = vec2_add(p0, offset);
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 1].pos = vec2_sub(p0, offset);
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 2].pos = vec2_add(p1, offset);
+	gl_ctx.mapped_verts[gl_ctx.num_verts + 3].pos = vec2_sub(p1, offset);
+
+	for (usize i = 0; i < 4; i += 1) {
+		gl_ctx.mapped_verts[gl_ctx.num_verts + i].color = color;
+	}
+
+	gl_ctx.mapped_tris[gl_ctx.num_tris + 0] = gl_ctx.num_verts + 0;
+	gl_ctx.mapped_tris[gl_ctx.num_tris + 1] = gl_ctx.num_verts + 1;
+	gl_ctx.mapped_tris[gl_ctx.num_tris + 2] = gl_ctx.num_verts + 2;
+
+	gl_ctx.mapped_tris[gl_ctx.num_tris + 3] = gl_ctx.num_verts + 2;
+	gl_ctx.mapped_tris[gl_ctx.num_tris + 4] = gl_ctx.num_verts + 1;
+	gl_ctx.mapped_tris[gl_ctx.num_tris + 5] = gl_ctx.num_verts + 3;
+
+	gl_ctx.num_verts += 4;
+	gl_ctx.num_tris += 6;
+}
+
+function void draw_quad_bezier(Vec2 p0, Vec2 p1, Vec2 p3, f32 thickness, Color color) {
+	u32 num_segments = 10;
+	for (usize i = 0; i < num_segments; i += 1) {
+	}
 }

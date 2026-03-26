@@ -39,14 +39,14 @@ typedef struct {
 	};
 } Rect;
 
-Vec2 vec2_add(Vec2 a, Vec2 b) {
+function Vec2 vec2_add(Vec2 a, Vec2 b) {
 	Vec2 result;
 	result.x = a.x + b.x;
 	result.y = a.y + b.y;
 	return result;
 }
 
-Vec3 vec3_add(Vec3 a, Vec3 b) {
+function Vec3 vec3_add(Vec3 a, Vec3 b) {
 	Vec3 result;
 	result.x = a.x + b.x;
 	result.y = a.y + b.y;
@@ -54,7 +54,7 @@ Vec3 vec3_add(Vec3 a, Vec3 b) {
 	return result;
 }
 
-Vec4 vec4_add(Vec4 a, Vec4 b) {
+function Vec4 vec4_add(Vec4 a, Vec4 b) {
 	Vec4 result;
 	result.x = a.x + b.x;
 	result.y = a.y + b.y;
@@ -63,14 +63,14 @@ Vec4 vec4_add(Vec4 a, Vec4 b) {
 	return result;
 }
 
-Vec2 vec2_sub(Vec2 a, Vec2 b) {
+function Vec2 vec2_sub(Vec2 a, Vec2 b) {
 	Vec2 result;
 	result.x = a.x - b.x;
 	result.y = a.y - b.y;
 	return result;
 }
 
-Vec3 vec3_sub(Vec3 a, Vec3 b) {
+function Vec3 vec3_sub(Vec3 a, Vec3 b) {
 	Vec3 result;
 	result.x = a.x - b.x;
 	result.y = a.y - b.y;
@@ -78,7 +78,7 @@ Vec3 vec3_sub(Vec3 a, Vec3 b) {
 	return result;
 }
 
-Vec4 vec4_sub(Vec4 a, Vec4 b) {
+function Vec4 vec4_sub(Vec4 a, Vec4 b) {
 	Vec4 result;
 	result.x = a.x - b.x;
 	result.y = a.y - b.y;
@@ -87,14 +87,14 @@ Vec4 vec4_sub(Vec4 a, Vec4 b) {
 	return result;
 }
 
-Vec2 vec2_cmul(Vec2 a, Vec2 b) {
+function Vec2 vec2_cmul(Vec2 a, Vec2 b) {
 	Vec2 result;
 	result.x = a.x * b.x;
 	result.y = a.y * b.y;
 	return result;
 }
 
-Vec3 vec3_cmul(Vec3 a, Vec3 b) {
+function Vec3 vec3_cmul(Vec3 a, Vec3 b) {
 	Vec3 result;
 	result.x = a.x * b.x;
 	result.y = a.y * b.y;
@@ -102,7 +102,7 @@ Vec3 vec3_cmul(Vec3 a, Vec3 b) {
 	return result;
 }
 
-Vec4 vec4_cmul(Vec4 a, Vec4 b) {
+function Vec4 vec4_cmul(Vec4 a, Vec4 b) {
 	Vec4 result;
 	result.x = a.x * b.x;
 	result.y = a.y * b.y;
@@ -111,14 +111,38 @@ Vec4 vec4_cmul(Vec4 a, Vec4 b) {
 	return result;
 }
 
-Vec2 vec2_cdiv(Vec2 a, Vec2 b) {
+function Vec2 vec2_smul(Vec2 v, f32 s) {
+	Vec2 result;
+	result.x = v.x * s;
+	result.y = v.y * s;
+	return result;
+}
+
+function Vec3 vec3_smul(Vec3 v, f32 s) {
+	Vec3 result;
+	result.x = v.x * s;
+	result.y = v.y * s;
+	result.z = v.z * s;
+	return result;
+}
+
+function Vec4 vec4_smul(Vec4 v, f32 s) {
+	Vec4 result;
+	result.x = v.x * s;
+	result.y = v.y * s;
+	result.z = v.z * s;
+	result.w = v.w * s;
+	return result;
+}
+
+function Vec2 vec2_cdiv(Vec2 a, Vec2 b) {
 	Vec2 result;
 	result.x = a.x / b.x;
 	result.y = a.y / b.y;
 	return result;
 }
 
-Vec3 vec3_cdiv(Vec3 a, Vec3 b) {
+function Vec3 vec3_cdiv(Vec3 a, Vec3 b) {
 	Vec3 result;
 	result.x = a.x / b.x;
 	result.y = a.y / b.y;
@@ -126,7 +150,7 @@ Vec3 vec3_cdiv(Vec3 a, Vec3 b) {
 	return result;
 }
 
-Vec4 vec4_cdiv(Vec4 a, Vec4 b) {
+function Vec4 vec4_cdiv(Vec4 a, Vec4 b) {
 	Vec4 result;
 	result.x = a.x / b.x;
 	result.y = a.y / b.y;
@@ -135,19 +159,56 @@ Vec4 vec4_cdiv(Vec4 a, Vec4 b) {
 	return result;
 }
 
-f32 vec2_dot(Vec2 a, Vec2 b) {
+function Vec2 vec2_sdiv(Vec2 v, f32 s) {
+	Vec2 result;
+	result.x = v.x / s;
+	result.y = v.y / s;
+	return result;
+}
+
+function Vec3 vec3_sdiv(Vec3 v, f32 s) {
+	Vec3 result;
+	result.x = v.x / s;
+	result.y = v.y / s;
+	result.z = v.z / s;
+	return result;
+}
+
+function Vec4 vec4_sdiv(Vec4 v, f32 s) {
+	Vec4 result;
+	result.x = v.x / s;
+	result.y = v.y / s;
+	result.z = v.z / s;
+	result.w = v.w / s;
+	return result;
+}
+
+function f32 vec2_dot(Vec2 a, Vec2 b) {
 	return a.x * b.x + a.y * b.y;
 }
 
-f32 vec3_dot(Vec3 a, Vec3 b) {
+function f32 vec3_dot(Vec3 a, Vec3 b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-f32 vec4_dot(Vec4 a, Vec4 b) {
+function f32 vec4_dot(Vec4 a, Vec4 b) {
 	return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
 }
 
-Rect rect_scale(Rect rect, Vec2 scale) {
+function Vec2 vec2_normalize(Vec2 v) {
+	return vec2_sdiv(v, sqrtf(vec2_dot(v, v)));
+}
+
+function Vec3 vec3_normalize(Vec3 v) {
+	return vec3_sdiv(v, sqrtf(vec3_dot(v, v)));
+}
+
+function Vec4 vec4_normalize(Vec4 v) {
+	return vec4_sdiv(v, sqrtf(vec4_dot(v, v)));
+}
+
+
+function Rect rect_scale(Rect rect, Vec2 scale) {
 	Rect result;
 	result.pos = rect.pos;
 	result.size = vec2_cmul(rect.size, scale);
@@ -155,7 +216,7 @@ Rect rect_scale(Rect rect, Vec2 scale) {
 }
 
 // padding = (Vec4) { left, top, right, bottom }
-Rect pad_rect(Rect rect, Vec4 padding) {
+function Rect pad_rect(Rect rect, Vec4 padding) {
 	Rect result;
 	result.x = rect.x + padding.x;
 	result.y = rect.y + padding.y;

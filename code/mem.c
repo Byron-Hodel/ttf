@@ -43,20 +43,20 @@ function u8 *_arena_push(Arena *arena, usize size, usize alignment, b32 zero) {
 	return mem;
 }
 
-#define push_struct(arena, T) _arena_push(arena, sizeof(T), alignof(T), TRUE)
-#define push_struct_nz(arena, T) _arena_push(arena, sizeof(T), alignof(T), FALSE)
+#define push_struct(arena, T) (T*)_arena_push(arena, sizeof(T), alignof(T), TRUE)
+#define push_struct_nz(arena, T) (T*)_arena_push(arena, sizeof(T), alignof(T), FALSE)
 
-#define push_struct_no_alignment(arena, T) _arena_push(arena, siweof(T), 1, TRUE)
-#define push_struct_no_alignment_nz(arena, T) _arena_push(arena, sizeof(T), 1, FALSE)
+#define push_struct_no_alignment(arena, T) (T*)_arena_push(arena, siweof(T), 1, TRUE)
+#define push_struct_no_alignment_nz(arena, T) (T*)_arena_push(arena, sizeof(T), 1, FALSE)
 
-#define push_array(arena, T, n) _arena_push(arena, sizeof(T)*(n), alignof(T), TRUE)
-#define push_array_nz(arena, T, n) _arena_push(arena, sizeof(T)*(n), alignof(T), FALSE)
+#define push_array(arena, T, n) (T*)_arena_push(arena, sizeof(T)*(n), alignof(T), TRUE)
+#define push_array_nz(arena, T, n) (T*)_arena_push(arena, sizeof(T)*(n), alignof(T), FALSE)
 
-#define push_array_no_alignment(arena, T, n) _arena_push(arena, sizeof(T)*(n), 1, TRUE)
-#define push_array_no_alignment_nz(arena, T, n) _arena_push(arena, sizeof(T)*(n), 1, FALSE)
+#define push_array_no_alignment(arena, T, n) (T*)_arena_push(arena, sizeof(T)*(n), 1, TRUE)
+#define push_array_no_alignment_nz(arena, T, n) (T*)_arena_push(arena, sizeof(T)*(n), 1, FALSE)
 
-#define push_array_aligned(arena, T, n, alignment) _arena_push(arena, sizeof(T)*(n), alignment, TRUE)
-#define push_array_aligned_nz(arena, T, n, alignment) _arena_push(arena, sizeof(T)*(n), alignment, FALSE)
+#define push_array_aligned(arena, T, n, alignment) (T*)_arena_push(arena, sizeof(T)*(n), alignment, TRUE)
+#define push_array_aligned_nz(arena, T, n, alignment) (T*)_arena_push(arena, sizeof(T)*(n), alignment, FALSE)
 
 function void arena_pop_to(Arena *arena, usize pos) {
 	ASSERT(arena != 0);

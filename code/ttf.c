@@ -10,7 +10,7 @@ typedef struct {
 	U8_Slice cmap_subtable;
 	U8_Slice loca_table;
 	U8_Slice glyf_table;
-} TTF_Font;
+} Font;
 
 typedef struct {
 	b16 on_curve;
@@ -27,6 +27,52 @@ typedef struct {
 	usize        num_verts;
 	Glyph_Vertex *verts;
 } Glyph_Outline;
+
+typedef struct {
+	b8  on_curve;
+	i32 pos[2];
+} Glyph_Point;
+
+typedef struct {
+	i32         min[2];
+	i32         max[2];
+	usize       num_contours;
+	usize       num_points;
+	u16         *contour_end_indices;
+	Glyph_Point *points;
+} Outline;
+
+typedef struct {
+	i32 num_points;
+	i32 num_contours;
+} Unpack_Result;
+
+// I am not sure what the types for all of these are yet
+typedef struct {
+	b32 auto_flip;
+	i32 ctrl_val_cut_in;
+	i32 delta_base;
+	i32 delta_shift;
+	i32 dual_proj_vecs;
+	i32 freedom_vec;
+	i32 zp0;
+	i32 zp1;
+	i32 zp2;
+	i32 instruct_ctrl;
+	i32 loop;
+	i32 min_dist;
+	i32 proj_vec;
+	i32 round_state;
+	i32 rp0;
+	i32 rp1;
+	i32 rp2;
+	b32 scan_ctrl;
+	i32 single_width_cut_in;
+	i32 single_width_value;
+} Graphics_State;
+
+global const i32 MAX_POINTS_IN_GLYPH = 65536;
+global const i32 MAX_COMPOUND_GLYPH_DEPTH = 32;
 
 function U8_Slice u8_subslice(U8_Slice slice, usize offset, usize len) {
 	U8_Slice subslice = {0};
@@ -52,7 +98,7 @@ function u32 read_u32be_unchecked(U8_Slice slice, usize offset) {
 	return (u32)(ptr[0] << 24) | (u32)(ptr[1] << 16) | (u32)(ptr[2] << 8) | ptr[3];
 }
 
-function TTF_Font font_make(U8_Slice data) {
+function Font font_make(U8_Slice data) {
 	u16 num_tables = 0;
 	// read offset subtable
 	if (data.len >= 12) {
@@ -238,7 +284,7 @@ function TTF_Font font_make(U8_Slice data) {
 	if (required_tables_ok) {
 	}
 
-	TTF_Font font = {0};
+	Font font = {0};
 	if (required_tables_ok) {
 		font.units_per_em = units_per_em;
 		font.index_to_loca_format = index_to_loca_format;
@@ -250,7 +296,7 @@ function TTF_Font font_make(U8_Slice data) {
 	return font;
 }
 
-function u16 font_glyph_index_from_codepoint(TTF_Font font, u32 codepoint) {
+function u16 font_glyph_index_from_codepoint(Font font, u32 codepoint) {
 	U8_Slice subtable = font.cmap_subtable;
 
 	b32 format_ok = FALSE;
@@ -342,7 +388,7 @@ function u16 font_glyph_index_from_codepoint(TTF_Font font, u32 codepoint) {
 	return glyph_index;
 }
 
-function U8_Slice get_glyph_data_range(TTF_Font font, u16 glyph_index) {
+function U8_Slice get_glyph_data_range(Font font, u16 glyph_index) {
 	// The loca table is validated within the font_make function
 	U8_Slice slice = {0};
 	if (glyph_index < font.num_glyphs) {
@@ -366,201 +412,446 @@ function U8_Slice get_glyph_data_range(TTF_Font font, u16 glyph_index) {
 	return slice;
 }
 
-function i32 glyf_read_coordinate(
-	U8_Slice coords,
-	usize *offset,
-	b32 short_vec,
-	b32 same_or_positive
+function void process_glyf_instructions(
+	void
+	//Glyph_Point *point_buffer,
+	//usize       point_buffer_len,
+	//U8_Slice    instructions
 ) {
-	i32 coord = 0;
-	usize off = *offset;
-	if (short_vec) {
-		coord = (i32)coords.base[off];
-		if (!same_or_positive) {
-			coord = -coord;
-		}
-		off += 1;
-	}
-	else if (!same_or_positive) {
-		coord = read_i16be_unchecked(coords, off);
-		off += 2;
-	}
-	*offset = off;
-	return coord;
 }
 
-function void unpack_simple_glyf_outline(
-  Arena         *arena,
-  Glyph_Outline *outline,
-  TTF_Font      font,
-	u16           glyph_index
+function i16 get_glyf_num_contours(Font font, u16 glyph_index) {
+	i16 num_contours = 0;
+	U8_Slice glyph_data = get_glyph_data_range(font, glyph_index);
+	if (glyph_data.len >= 10) {
+		num_contours = read_i16be_unchecked(glyph_data, 0);
+	}
+	return num_contours;
+}
+
+function Unpack_Result unpack_simple_glyf(
+	Font        font,
+	u16         glyph_index,
+	Glyph_Point *point_buffer,
+	usize       point_buffer_len,
+	u16         *contour_buffer,
+	usize       contour_buffer_len,
+	i32         funits_to_pixels_scale, // 16.16 fixed point
+	b32         enable_hinting
 ) {
 	U8_Slice glyph_data = get_glyph_data_range(font, glyph_index);
 
+	b32 get_data_arrays = FALSE;
 	i16 num_contours = 0;
 	if (glyph_data.len >= 10) {
 		num_contours = read_i16be_unchecked(glyph_data, 0);
 		glyph_data = u8_subslice(glyph_data, 10, glyph_data.len - 10);
+		get_data_arrays = num_contours >= 0 && glyph_data.len > 0;
+		get_data_arrays &= contour_buffer_len >= (usize)num_contours;
 	}
 
-	// get glyf table arrays
-	b32 arrays_ok = FALSE;
-	U8_Slice end_points;
-	U8_Slice instructions;
-	U8_Slice flags;
-	U8_Slice x_coords;
-	U8_Slice y_coords;
-	if (num_contours > 0) {
+	// get data arrays
+	b32 process_contours = FALSE;
+	U8_Slice contour_end_indices = {0};
+	U8_Slice instructions = {0};
+	U8_Slice flags = {0};
+	U8_Slice coords[2] = {0};
+	u16 num_points_in_glyph = 0;
+	if (get_data_arrays) {
+		// read the number of points in the glyph
+		b32 get_num_instructions = FALSE;
+		num_points_in_glyph = 0;
+		contour_end_indices = u8_subslice(glyph_data, 0, 2 * (usize)num_contours);
+		if (contour_end_indices.len == 2 * (usize)num_contours) {
+			usize last_off = 2 * (usize)num_contours - 2;
+			num_points_in_glyph = read_u16be_unchecked(contour_end_indices, last_off) + 1;
+			get_num_instructions = TRUE;
+		}
+
 		usize num_instructions_off = (usize)num_contours * 2;
-		usize instructions_off = num_instructions_off + 2;
+		usize instruction_data_off = num_instructions_off + 2;
 
+		// read number of instructions
+		b32 get_max_flags_subslice = FALSE;
 		u16 num_instructions = 0;
-		if (glyph_data.len >= num_instructions_off + 2) {
+		if (get_num_instructions && glyph_data.len >= num_instructions_off + 2) {
 			num_instructions = read_u16be_unchecked(glyph_data, num_instructions_off);
+			get_max_flags_subslice = TRUE;
 		}
 
-		usize flags_off = instructions_off + num_instructions;
+		usize flags_off = instruction_data_off + num_instructions;
 
-		end_points   = u8_subslice(glyph_data, 0, (usize)num_contours * 2);
-		instructions = u8_subslice(glyph_data, instructions_off, num_instructions);
-		flags        = u8_subslice(glyph_data, flags_off, glyph_data.len - flags_off);
+		// get maximum sized flags subslice
+		b32 read_flags = FALSE;
+		if (get_max_flags_subslice) {
+			usize max_flags = glyph_data.len - flags_off;
+			if (max_flags > num_points_in_glyph) {
+				max_flags = num_points_in_glyph;
+			}
 
-		b32 end_points_ok = FALSE;
-		u16 num_points = 0;
-		if (end_points.len == (usize)num_contours * 2) {
-			end_points_ok = TRUE;
-			num_points = read_u16be_unchecked(end_points, (usize)(num_contours - 1) * 2) + 1;
+			flags = u8_subslice(glyph_data, flags_off, max_flags);
+			read_flags = flags.len > 0;
 		}
 
-		b32 flags_ok = end_points_ok;
-		usize num_counted_points = 0;
-		usize flags_len = 0;
-		usize x_coords_len = 0;
-		usize y_coords_len = 0;
-		for (; flags_len < flags.len;) {
-			u8 flag = flags.base[flags_len];
-			flags_len += 1;
+		// read flags to determine flags size as well as x & y coord sizes
+		b32 get_arrays = read_flags;
+		usize num_flags = 0;
+		usize coords_len[2] = {0};
+		if (read_flags) {
+			usize num_points_from_flags = 0;
+			while (num_flags < flags.len) {
+				u8 flag = flags.base[num_flags];
+				num_flags += 1;
 
-			b8 x_short_vec        = (flag & (1 << 1)) != 0;
-			b8 y_short_vec        = (flag & (1 << 2)) != 0;
-			b8 repeat             = (flag & (1 << 3)) != 0;
-			b8 x_same_or_positive = (flag & (1 << 4)) != 0;
-			b8 y_same_or_positive = (flag & (1 << 5)) != 0;
+				b8 short_vec[2];
+				b8 same_or_positive[2];
+				short_vec[0]        = (flag & (1 << 1)) != 0;
+				short_vec[1]        = (flag & (1 << 2)) != 0;
+				b8 repeat           = (flag & (1 << 3)) != 0;
+				same_or_positive[0] = (flag & (1 << 4)) != 0;
+				same_or_positive[1] = (flag & (1 << 5)) != 0;
 
-			u8 num_repeats = 0;
-			if (repeat && flags_len < flags.len) {
-				num_repeats = flags.base[flags_len];
-				flags_len += 1;
-			}
-			else if (repeat) {
-				flags_ok = FALSE;
-				break;
-			}
-			usize num_verts = 1 + num_repeats;
-			num_counted_points += num_verts;
+				u8 num_repeats = 0;
+				if (repeat && num_flags < flags.len) {
+					num_repeats = flags.base[num_flags];
+					num_flags += 1;
+				}
+				else if (repeat) {
+					get_arrays = FALSE;
+					break;
+				}
+				num_points_from_flags += 1 + num_repeats;
 
-			if (x_short_vec) {
-				x_coords_len += num_verts;
-			}
-			else if (!x_same_or_positive) {
-				x_coords_len += num_verts * 2;
+				for (i32 i = 0; i < 2; i += 1) {
+					if (short_vec[i]) {
+						coords_len[i] += 1 + num_repeats;
+					}
+					else if (!same_or_positive[i]) {
+						coords_len[i] += 2 * num_repeats + 2;
+					}
+				}
+
+				if (num_points_from_flags >= num_points_in_glyph) {
+					break;
+				}
 			}
 
-			if (y_short_vec) {
-				y_coords_len += num_verts;
-			}
-			else if (!y_same_or_positive) {
-				y_coords_len += num_verts * 2;
-			}
-
-			if (num_counted_points >= num_points) {
-				break;
-			}
+			get_arrays &= num_points_from_flags == num_points_in_glyph;
 		}
 
-		flags = u8_subslice(glyph_data, flags_off, flags_len);
-		flags_ok &= num_counted_points == num_points;
-		flags_ok &= flags.len == flags_len;
-
-		usize x_coords_off = flags_off + flags_len;
-		usize y_coords_off = x_coords_off + x_coords_len;
-		x_coords = u8_subslice(glyph_data, x_coords_off, x_coords_len);
-		y_coords = u8_subslice(glyph_data, y_coords_off, y_coords_len);
-
-		arrays_ok = flags_ok;
-		arrays_ok &= x_coords.len == x_coords_len;
-		arrays_ok &= y_coords.len == y_coords_len;
-	}
-
-	// unpack x & y coordinates
-	if (arrays_ok) {
-		usize x_coord_off = 0;
-		usize y_coord_off = 0;
-		i32 x = 0, y = 0;
-		for (usize flag_off = 0; flag_off < flags.len;) {
-			u8 flag = flags.base[flag_off];
-			flag_off += 1;
-
-			b8 on_curve           = (flag & (1 << 0)) != 0;
-			b8 x_short_vec        = (flag & (1 << 1)) != 0;
-			b8 y_short_vec        = (flag & (1 << 2)) != 0;
-			b8 repeat             = (flag & (1 << 3)) != 0;
-			b8 x_same_or_positive = (flag & (1 << 4)) != 0;
-			b8 y_same_or_positive = (flag & (1 << 5)) != 0;
-
-			u8 num_repeats = 0;
-			if (repeat && flag_off < flags.len) {
-				num_repeats = flags.base[flag_off];
-				flag_off += 1;
-			}
-
-			usize num_verts = 1 + (usize)num_repeats;
-			Glyph_Vertex *verts = (Glyph_Vertex*)push_array_no_alignment_nz(arena, Glyph_Vertex,
-			                                                                num_verts);
-			for (usize i = 0; i < num_verts; i += 1) {
-				x += glyf_read_coordinate(x_coords, &x_coord_off, x_short_vec, x_same_or_positive) << 6;
-				y += glyf_read_coordinate(y_coords, &y_coord_off, y_short_vec, y_same_or_positive) << 6;
-				verts[i].on_curve = on_curve;
-				verts[i].prev_offset_plus_one = 0;
-				verts[i].x = x;
-				verts[i].y = y;
-			}
-			outline->num_verts += num_verts;
+		// subslice data arrays
+		if (get_arrays) {
+			usize coords_off[2];
+			coords_off[0] = flags_off + num_flags;
+			coords_off[1] = coords_off[0] + coords_len[0];
+			contour_end_indices = u8_subslice(glyph_data, 0, (usize)num_contours);
+			instructions        = u8_subslice(glyph_data, instruction_data_off, num_instructions);
+			flags               = u8_subslice(glyph_data, flags_off, num_flags);
+			coords[0]           = u8_subslice(glyph_data, coords_off[0], coords_len[0]);
+			coords[1]           = u8_subslice(glyph_data, coords_off[1], coords_len[1]);
+			process_contours  = TRUE;
+			process_contours &= contour_end_indices.len == (usize)num_contours;
+			process_contours &= instructions.len == num_instructions;
+			process_contours &= flags.len == num_flags;
+			process_contours &= coords[0].len == coords_len[0];
+			process_contours &= coords[1].len == coords_len[1];
+			process_contours &= point_buffer_len >= (usize)num_points_in_glyph;
 		}
 	}
+
+	// process the glyph's contour end points
+	b32 process_points = FALSE;
+	if (process_contours) {
+		b32 indices_valid = TRUE;
+		u16 prev_index = 0;
+		for (u16 i = 0; i < num_contours; i += 1) {
+			u16 index = read_u16be_unchecked(contour_end_indices, 2 * i);
+			contour_buffer[i] = index;
+			if (index < prev_index) {
+				indices_valid = FALSE;
+				break;
+			}
+		}
+		process_points = indices_valid;
+	}
+
+	Unpack_Result result = {0};
+	if (process_points) {
+		// unpack points
+		{
+			usize coord_read_off[2] = {0};
+			i32 point_pos[2] = {0};
+			usize point_buffer_index = 0;
+			for (usize flag_index = 0; flag_index < flags.len; flag_index += 1) {
+				u8 flag = flags.base[flag_index];
+
+				b8 short_vec[2];
+				b8 same_or_positive[2];
+				b8 on_curve         = (flag & (1 << 0)) != 0;
+				short_vec[0]        = (flag & (1 << 1)) != 0;
+				short_vec[1]        = (flag & (1 << 2)) != 0;
+				b8 repeat           = (flag & (1 << 3)) != 0;
+				same_or_positive[0] = (flag & (1 << 4)) != 0;
+				same_or_positive[1] = (flag & (1 << 5)) != 0;
+
+				u8 repeat_count = 0;
+				if (repeat) {
+					flag_index += 1;
+					repeat_count = flags.base[flag_index];
+				}
+
+				for (u32 repeat_index = 0; repeat_index < (u32)repeat_count + 1; repeat_index += 1) {
+					// update point position
+					for (usize i = 0; i < 2; i += 1) {
+						i32 delta = 0;
+						if (short_vec[i]) {
+							delta = (i32)coords[i].base[coord_read_off[i]];
+							if (!same_or_positive[i]) {
+								delta = -delta;
+							}
+							coord_read_off[i] += 1;
+						}
+						else if (!same_or_positive[i]) {
+							delta = read_i16be_unchecked(coords[i], coord_read_off[i]);
+							coord_read_off[i] += 2;
+						}
+						point_pos[i] += delta;
+					}
+
+					// append point to buffer
+					point_buffer[point_buffer_index].on_curve = on_curve;
+					point_buffer[point_buffer_index].pos[0] = point_pos[0];
+					point_buffer[point_buffer_index].pos[1] = point_pos[1];
+					point_buffer_index += 1;
+				}
+			}
+		}
+
+		// TODO(byron): I think variation data is processed here (gvar table stuff)
+
+		// convert points to 16.16 and scale points
+		for (u16 i = 0; i < num_points_in_glyph; i += 1) {
+			point_buffer[i].pos[0] *= funits_to_pixels_scale;
+			point_buffer[i].pos[1] *= funits_to_pixels_scale;
+			//point_buffer[i].pos[0] <<= 16;
+			//point_buffer[i].pos[1] <<= 16;
+		}
+
+		// TODO(byron): Do not forget about phantom points read
+		// from the hmtx and vmtx tables
+
+		// apply hinting
+		if (enable_hinting) {
+			// TODO
+		}
+
+		result.num_points = num_points_in_glyph;
+		result.num_contours = num_contours;
+	}
+	return result;
 }
 
-function void unpack_compound_glyf_outline(
-  Arena         *arena,
-  Glyph_Outline *outline,
-  TTF_Font      font,
-  u16           glyph_index,
-	u8            max_depth
+function Unpack_Result unpack_composite_glyf(
+	Font        font,
+	u16         glyph_index,
+	Glyph_Point *point_buffer,
+	usize       point_buffer_len,
+	u16         *contour_buffer,
+	usize       contour_buffer_len,
+	i32         funits_to_pixels_scale, // 16.16 fixed point
+	u8          max_depth,
+	b32         enable_hinting
 ) {
-}
-
-function Glyph_Outline font_unpack_glyph_outline(Arena *arena, TTF_Font font, u16 glyph_index) {
-	// IMPORTANT(byron): only push vertices to the arena
-	Glyph_Outline outline = {0};
-	outline.num_verts = 0;
-	outline.verts = (Glyph_Vertex*)push_array(arena, Glyph_Vertex, 0);
-
 	U8_Slice glyph_data = get_glyph_data_range(font, glyph_index);
 
-	i16 num_contours = 0;
+	b32 process_components = FALSE;
+	i32 num_contours = 0;
 	if (glyph_data.len >= 10) {
 		num_contours = read_i16be_unchecked(glyph_data, 0);
-		outline.x_min = (i32)read_i16be_unchecked(glyph_data, 2) << 6;
-		outline.y_min = (i32)read_i16be_unchecked(glyph_data, 4) << 6;
-		outline.x_max = (i32)read_i16be_unchecked(glyph_data, 6) << 6;
-		outline.y_max = (i32)read_i16be_unchecked(glyph_data, 8) << 6;
+		glyph_data = u8_subslice(glyph_data, 10, glyph_data.len - 10);
+		process_components = num_contours < 0 && glyph_data.len > 0 && max_depth > 0;
 	}
 
-	if (num_contours < 0) { // compound glyph
-		unpack_compound_glyf_outline(arena, &outline, font, glyph_index, 16);
+	Unpack_Result unpack_result = {0};
+	U8_Slice instructions = {0};
+	if (process_components) {
+		b32 has_instructions = FALSE;
+		usize component_off = 0;
+		while (glyph_data.len >= 4) {
+			u16 component_flags = read_u16be_unchecked(glyph_data, component_off + 0);
+			u16 component_index = read_u16be_unchecked(glyph_data, component_off + 2);
+
+			b8 arg_1_and_2_are_words    = (component_flags & (1 << 0)) != 0;
+			b8 args_are_xy_values       = (component_flags & (1 << 1)) != 0;
+			b8 round_to_xy_grid         = (component_flags & (1 << 2)) != 0;
+			b8 we_have_a_scale          = (component_flags & (1 << 3)) != 0;
+			b8 we_have_an_x_and_y_scale = (component_flags & (1 << 6)) != 0;
+			b8 we_have_a_two_by_two     = (component_flags & (1 << 7)) != 0;
+			b8 we_have_instructions     = (component_flags & (1 << 8)) != 0;
+			b8 use_my_metrics           = (component_flags & (1 << 9)) != 0;
+			b8 more_components          = (component_flags & (1 << 5)) != 0;
+			has_instructions |= we_have_instructions;
+
+			usize args_size = arg_1_and_2_are_words ? 4 : 2;
+			usize transform_data_off = component_off + 4 + args_size;
+
+			U8_Slice args_data = u8_subslice(glyph_data, component_off + 4, args_size);
+
+			// read offset arguments
+			// NOTE(byron): not converted to fixed point when read in
+			i32 arg1 = 0;
+			i32 arg2 = 0;
+			if (args_data.len == args_size) {
+				if (arg_1_and_2_are_words && args_are_xy_values) {
+					// values are signed
+					arg1 = (i32)read_i16be_unchecked(args_data, 0);
+					arg2 = (i32)read_i16be_unchecked(args_data, 2);
+				}
+				else if (!arg_1_and_2_are_words && args_are_xy_values) {
+					// values are signed
+					arg1 = (i32)(i8)args_data.base[0];
+					arg2 = (i32)(i8)args_data.base[1];
+				}
+				else if (arg_1_and_2_are_words && !args_are_xy_values) {
+					// values are unsigned
+					arg1 = (i32)read_u16be_unchecked(args_data, 0);
+					arg2 = (i32)read_u16be_unchecked(args_data, 2);
+				}
+				else if (!arg_1_and_2_are_words && !args_are_xy_values) {
+					// values are unsigned
+					arg1 = (i32)args_data.base[0];
+					arg2 = (i32)args_data.base[1];
+				}
+			}
+
+			// get transform data
+			usize transform_data_size = 0;
+			i32 xscale = 1 << 16;
+			i32 scale01 = 0;
+			i32 scale10 = 0;
+			i32 yscale = 1 << 16;
+			if (we_have_a_scale) {
+				transform_data_size = 2;
+				U8_Slice transform_data = u8_subslice(glyph_data, transform_data_off, 2);
+				if (transform_data.len == 2) {
+					xscale = (i32)read_i16be_unchecked(transform_data, 0) << 2;
+					yscale = xscale;
+				}
+			}
+			else if (we_have_an_x_and_y_scale) {
+				transform_data_size = 4;
+				U8_Slice transform_data = u8_subslice(glyph_data, transform_data_off, 4);
+				if (transform_data.len == 4) {
+					xscale = (i32)read_i16be_unchecked(transform_data, 0) << 2;
+					yscale = (i32)read_i16be_unchecked(transform_data, 2) << 2;
+				}
+			}
+			else if (we_have_a_two_by_two) {
+				transform_data_size = 8;
+				U8_Slice transform_data = u8_subslice(glyph_data, transform_data_off, 8);
+				if (transform_data.len == 8) {
+					xscale = (i32)read_i16be_unchecked(transform_data, 0) << 2;
+					scale01 = (i32)read_i16be_unchecked(transform_data, 2) << 2;
+					scale10 = (i32)read_i16be_unchecked(transform_data, 4) << 2;
+					yscale = (i32)read_i16be_unchecked(transform_data, 6) << 2;
+				}
+			}
+
+			// process component glyph
+			U8_Slice component_data = get_glyph_data_range(font, component_index);
+			if (component_data.len >= 10) {
+				i16 num_contours = read_i16be_unchecked(component_data, 0);
+
+				Glyph_Point *passed_point_buffer = point_buffer + unpack_result.num_points;
+				usize passed_point_buffer_len = point_buffer_len - (usize)unpack_result.num_points;
+				ASSERT(point_buffer_len > (usize)unpack_result.num_points);
+				u16 *passed_contour_buffer = contour_buffer + unpack_result.num_contours;
+				usize passed_contour_buffer_len = contour_buffer_len - (usize)unpack_result.num_contours;
+
+				if (num_contours < 0) {
+					Unpack_Result r = unpack_composite_glyf(font, component_index, passed_point_buffer,
+					                                        passed_point_buffer_len, passed_contour_buffer,
+					                                        passed_contour_buffer_len, funits_to_pixels_scale,
+					                                        max_depth - 1, enable_hinting);
+					unpack_result.num_points += r.num_points;
+					unpack_result.num_contours += r.num_contours;
+				}
+				else {
+					Unpack_Result r = unpack_simple_glyf(font, component_index, passed_point_buffer,
+					                                     passed_point_buffer_len, passed_contour_buffer,
+					                                     passed_contour_buffer_len, funits_to_pixels_scale,
+					                                     enable_hinting);
+					unpack_result.num_points += r.num_points;
+					unpack_result.num_contours += r.num_contours;
+				}
+			}
+
+			component_off = transform_data_off + transform_data_size;
+
+			if (!more_components) {
+				break;
+			}
+		}
+	}
+
+	return unpack_result;
+}
+
+function Outline font_unpack_glyph(
+	Arena *arena,
+	Font  font,
+	u16   glyph_index,
+	i32   funits_to_pixels_scale, // 16.16 fixed point
+	b32   enable_hinting
+) {
+	U8_Slice glyph_data = get_glyph_data_range(font, glyph_index);
+
+	Outline outline = {0};
+	i32 num_contours = 0;
+	if (glyph_data.len >= 10) {
+		num_contours = read_i16be_unchecked(glyph_data, 0);
+		outline.min[0] = (i32)read_i16be_unchecked(glyph_data, 2) << 6;
+		outline.min[1] = (i32)read_i16be_unchecked(glyph_data, 4) << 6;
+		outline.max[0] = (i32)read_i16be_unchecked(glyph_data, 6) << 6;
+		outline.max[1] = (i32)read_i16be_unchecked(glyph_data, 8) << 6;
+	}
+
+	Arena_Temp scratch = begin_scratch(&arena, 1);
+	Glyph_Point *point_buffer = push_array_nz(scratch.arena, Glyph_Point, MAX_POINTS_IN_GLYPH);
+	u16         *contour_buffer = push_array_nz(scratch.arena, u16, MAX_POINTS_IN_GLYPH);
+
+	i32 num_points = 0;
+	if (num_contours < 0) { // composite glyph
+		Unpack_Result r = unpack_composite_glyf(font, glyph_index, point_buffer, MAX_POINTS_IN_GLYPH,
+		                                       contour_buffer, MAX_POINTS_IN_GLYPH,
+		                                       funits_to_pixels_scale, MAX_COMPOUND_GLYPH_DEPTH,
+		                                       enable_hinting);
+		num_points = r.num_points;
+		num_contours = r.num_contours;
 	}
 	else if (num_contours > 0) { // simple glyph
-		unpack_simple_glyf_outline(arena, &outline, font, glyph_index);
+		Unpack_Result r = unpack_simple_glyf(font, glyph_index, point_buffer, MAX_POINTS_IN_GLYPH,
+		                                     contour_buffer, MAX_POINTS_IN_GLYPH, 
+																				 funits_to_pixels_scale, enable_hinting);
+		num_points = r.num_points;
+		num_contours = r.num_contours;
 	}
+
+	if (num_points > 0 && num_contours > 0) {
+		outline.num_points = (usize)num_points;
+		outline.num_contours = (usize)num_contours;
+		outline.contour_end_indices = push_array_nz(arena, u16, (usize)num_contours);
+		outline.points = push_array_nz(arena, Glyph_Point, (usize)num_points);
+
+		for (i32 i = 0; i < num_points; i += 1) {
+			outline.points[i].on_curve = point_buffer[i].on_curve;
+			outline.points[i].pos[0] = point_buffer[i].pos[0] >> 10;
+			outline.points[i].pos[1] = point_buffer[i].pos[1] >> 10;
+		}
+
+		memcpy(outline.contour_end_indices , contour_buffer, outline.num_contours);
+	}
+
+	end_scratch(scratch);
 	return outline;
 }
