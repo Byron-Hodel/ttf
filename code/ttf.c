@@ -699,28 +699,29 @@ function Unpack_Result unpack_composite_glyf(
 
 			// read offset arguments
 			// NOTE(byron): not converted to fixed point when read in
-			i32 arg1 = 0;
-			i32 arg2 = 0;
+
+			b32 offset_via_point_alignment = FALSE;
+			i32 args[2] = {0};
 			if (args_data.len == args_size) {
 				if (arg_1_and_2_are_words && args_are_xy_values) {
 					// values are signed
-					arg1 = (i32)read_i16be_unchecked(args_data, 0);
-					arg2 = (i32)read_i16be_unchecked(args_data, 2);
+					args[0] = (i32)read_i16be_unchecked(args_data, 0);
+					args[1] = (i32)read_i16be_unchecked(args_data, 2);
 				}
 				else if (!arg_1_and_2_are_words && args_are_xy_values) {
 					// values are signed
-					arg1 = (i32)(i8)args_data.base[0];
-					arg2 = (i32)(i8)args_data.base[1];
+					args[0] = (i32)(i8)args_data.base[0];
+					args[1] = (i32)(i8)args_data.base[1];
 				}
 				else if (arg_1_and_2_are_words && !args_are_xy_values) {
 					// values are unsigned
-					arg1 = (i32)read_u16be_unchecked(args_data, 0);
-					arg2 = (i32)read_u16be_unchecked(args_data, 2);
+					args[0] = (i32)read_u16be_unchecked(args_data, 0);
+					args[1] = (i32)read_u16be_unchecked(args_data, 2);
 				}
 				else if (!arg_1_and_2_are_words && !args_are_xy_values) {
 					// values are unsigned
-					arg1 = (i32)args_data.base[0];
-					arg2 = (i32)args_data.base[1];
+					args[0] = (i32)args_data.base[0];
+					args[1] = (i32)args_data.base[1];
 				}
 			}
 
@@ -757,34 +758,69 @@ function Unpack_Result unpack_composite_glyf(
 				}
 			}
 
-			// process component glyph
+			// unpack and process component
 			U8_Slice component_data = get_glyph_data_range(font, component_index);
 			if (component_data.len >= 10) {
 				i16 num_contours = read_i16be_unchecked(component_data, 0);
 
-				Glyph_Point *passed_point_buffer = point_buffer + unpack_result.num_points;
-				usize passed_point_buffer_len = point_buffer_len - (usize)unpack_result.num_points;
+				Glyph_Point *component_point_buf = point_buffer + unpack_result.num_points;
+				usize component_point_buf_len  = point_buffer_len - (usize)unpack_result.num_points;
 				ASSERT(point_buffer_len > (usize)unpack_result.num_points);
-				u16 *passed_contour_buffer = contour_buffer + unpack_result.num_contours;
-				usize passed_contour_buffer_len = contour_buffer_len - (usize)unpack_result.num_contours;
+				u16 *component_contour_buf = contour_buffer + unpack_result.num_contours;
+				usize component_contour_buf_len = contour_buffer_len - (usize)unpack_result.num_contours;
 
+				Unpack_Result component_unpack_result = {0};
 				if (num_contours < 0) {
-					Unpack_Result r = unpack_composite_glyf(font, component_index, passed_point_buffer,
-					                                        passed_point_buffer_len, passed_contour_buffer,
-					                                        passed_contour_buffer_len, funits_to_pixels_scale,
-					                                        max_depth - 1, enable_hinting);
-					unpack_result.num_points += r.num_points;
-					unpack_result.num_contours += r.num_contours;
+					component_unpack_result = unpack_composite_glyf(font, component_index,
+					                                                component_point_buf,
+					                                                component_point_buf_len,
+					                                                component_contour_buf,
+					                                                component_contour_buf_len,
+					                                                funits_to_pixels_scale,
+					                                                max_depth - 1, enable_hinting);
 				}
 				else {
-					Unpack_Result r = unpack_simple_glyf(font, component_index, passed_point_buffer,
-					                                     passed_point_buffer_len, passed_contour_buffer,
-					                                     passed_contour_buffer_len, funits_to_pixels_scale,
-					                                     enable_hinting);
-					unpack_result.num_points += r.num_points;
-					unpack_result.num_contours += r.num_contours;
+					component_unpack_result = unpack_simple_glyf(font, component_index,
+					                                             component_point_buf,
+					                                             component_point_buf_len,
+					                                             component_contour_buf,
+					                                             component_contour_buf_len,
+					                                             funits_to_pixels_scale, enable_hinting);
 				}
-			}
+
+				i32 offset[2];
+				offset[0] = args[0] * funits_to_pixels_scale;
+				offset[1] = args[1] * funits_to_pixels_scale;
+				if (offset_via_point_alignment) {
+					b32 parent_index_valid = args[0] < unpack_result.num_points;
+					b32 child_index_valid = args[1] < component_unpack_result.num_points;
+					if (parent_index_valid && child_index_valid) {
+						Glyph_Point parent_point = point_buffer[args[0]];
+						Glyph_Point child_point = component_point_buf[args[1]];
+						offset[0] = parent_point.pos[0] - child_point.pos[0];
+						offset[1] = parent_point.pos[1] - child_point.pos[1];
+						offset[0] <<= 16;
+						offset[1] <<= 16;
+					}
+				}
+
+				// apply transform to component
+				for (i32 i = 0; i < component_unpack_result.num_points; i += 1) {
+					i32 x = component_point_buf[i].pos[0] >> 16;
+					i32 y = component_point_buf[i].pos[1] >> 16;
+					component_point_buf[i].pos[0] = xscale * x + scale10 * y + offset[0];
+					component_point_buf[i].pos[1] = scale01 * x + yscale * y + offset[1];
+				}
+
+				// renumber component contour indices
+				for (i32 i = 0; i < component_unpack_result.num_contours; i += 1) {
+					component_contour_buf[i] += unpack_result.num_contours;
+				}
+
+				// update current unpack result
+				unpack_result.num_points += component_unpack_result.num_points;
+				unpack_result.num_contours += component_unpack_result.num_contours;
+			}	
 
 			component_off = transform_data_off + transform_data_size;
 
