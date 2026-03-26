@@ -17,30 +17,38 @@ structured architecture and expanded functionality.
 
 Below are a list of currently planned features.
 
-### Font Tables
-- [x] TrueType file parsing
+### Font Table Parsing (partial or complete support)
+- [x] Font Directory
+- [x] head
+- [x] maxp
 - [x] cmap
-- [ ] kerning (kern)
-- [ ] metrics (hhea, hmtx)
+    - [x] Format 0
+    - [ ] Format 2
+    - [ ] Format 4
+    - [x] Format 6
+    - [ ] Format 8
+    - [ ] Format 10
+    - [ ] Format 12
+    - [ ] Format 13
+    - [ ] Format 14
+- [x] loca
+- [x] glyf
+    - [x] simple glyphs
+    - [x] compound glyphs
+    - [ ] hinting (using built-in instructions)
+- [ ] hhea
+- [ ] hmtx
+- [ ] gvar
+- [ ] kern
+- [ ] gpos
+- [ ] cff
+    - [ ] simple glyphs
+    - [ ] compound glyphs
+- [ ] cff2
+    - [ ] simple glyphs
+    - [ ] compound glyphs
 
-### cmap Subtable Support
-- [x] Format 0
-- [ ] Format 2
-- [ ] Format 4
-- [x] Format 6
-- [ ] Format 8
-- [ ] Format 10
-- [ ] Format 12
-- [ ] Format 13
-- [ ] Format 14
-
-### Glyph Parsing
-- [x] Simple glyphs (glyf)
-- [ ] Compound glyphs (glyf)
-- [ ] CFF glyphs
-
-### Hinting
-- [ ] glyf instruction interpreter
+Additional tables may be added in the future.
 
 ### Rendering
 - [ ] Outline rasterization
